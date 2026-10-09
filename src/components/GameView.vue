@@ -23,6 +23,7 @@ onBeforeUnmount(() => game?.dispose())
 
 const save = () => game?.screenshot()
 const again = () => game?.reset()
+const reload = () => window.location.reload()
 </script>
 
 <template>
@@ -42,7 +43,7 @@ const again = () => game?.reset()
     </footer>
     <div v-if="fatal" class="fatal">
       <p>画纸没能展开（需要 WebGL 支持）。</p>
-      <button @click="location.reload()">重试</button>
+      <button @click="reload">重试</button>
     </div>
   </div>
 </template>

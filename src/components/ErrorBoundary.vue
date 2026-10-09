@@ -8,13 +8,14 @@ onErrorCaptured(e => {
   track('error', { where: 'boundary', msg: String(e) })
   return false
 })
+const reload = () => window.location.reload()
 </script>
 
 <template>
   <slot v-if="!err" />
   <div v-else class="fb">
     <p>纸有点皱了，页面出了点问题。</p>
-    <button @click="location.reload()">重新展开</button>
+    <button @click="reload">重新展开</button>
   </div>
 </template>
 
