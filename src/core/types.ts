@@ -13,6 +13,9 @@ export interface Layer {
   readonly settled: boolean
   readonly tools: Tool[]
   tool: string
+  readonly directions: Tool[]
+  direction: string
+  setDirection(id: string): void
   notice: string
   setTool(id: string): void
   input(p: THREE.Vector2, kind: InputKind): void

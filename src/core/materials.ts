@@ -6,6 +6,7 @@ export const uMotion = { value: 1 }
 
 const VERT = /* glsl */ `
 uniform float uGrow,uBase,uMode,uTime,uSway,uMotion;
+attribute float aAlive;
 attribute float aBorn;
 attribute float aSeed;
 attribute float aInk;
@@ -20,7 +21,7 @@ void main(){
     float t=clamp((uTime-aBorn)*mix(4.,1.6,uMotion),0.,1.);
     g=1.-pow(1.-t,3.);
   }
-  vGrowth=g;
+  vGrowth=g*aAlive;
   if(uMode<.5||uMode>2.5) p.y=uBase+(p.y-uBase)*g;
   vec4 m=vec4(p,1.);
   #ifdef USE_INSTANCING
@@ -85,6 +86,7 @@ export function inkMat(color: string, o: InkOpts = {}) {
 /** 补齐 shader 需要的自定义属性，避免读到未绑定的垃圾值 */
 export function inkGeometry(geo: THREE.BufferGeometry) {
   const n = geo.attributes.position.count
+  if (!geo.attributes.aAlive) geo.setAttribute('aAlive', new THREE.BufferAttribute(new Float32Array(n).fill(1), 1))
   for (const a of ['aSeed', 'aBorn', 'aInk', 'aTone'])
     if (!geo.attributes[a]) geo.setAttribute(a, new THREE.BufferAttribute(new Float32Array(n), 1))
   return geo
@@ -144,12 +146,21 @@ export function sketched(shape: THREE.Shape, width = .014, segments = 20) {
   return combine([new THREE.ShapeGeometry(shape, segments), pencil(shape.extractPoints(segments).shape, width, true)])
 }
 
-export function sketchedRibbon(c: THREE.Curve<THREE.Vector2>, w0: number, w1: number, widthAt?: (p: THREE.Vector2) => number, segments = 64) {
+export function sketchedRibbon(c: THREE.Curve<THREE.Vector2>, w0: number, w1: number, widthAt?: (p: THREE.Vector2) => number, segments = 64, edgeVisible?: (p: THREE.Vector2) => boolean) {
   const fill = ribbon(c, w0, w1, segments, widthAt)
   const positions = fill.attributes.position
   const edges = [0, 1].map(side => Array.from({ length: positions.count / 2 }, (_, i) =>
     new THREE.Vector2(positions.getX(i * 2 + side), positions.getY(i * 2 + side))))
-  return combine([fill, ...edges.map(edge => pencil(edge, .014))])
+  const outlines: THREE.BufferGeometry[] = []
+  for (const edge of edges) {
+    let run: THREE.Vector2[] = []
+    for (const p of edge) {
+      if (!edgeVisible || edgeVisible(p)) run.push(p)
+      else { if (run.length > 1) outlines.push(pencil(run, .014)); run = [] }
+    }
+    if (run.length > 1) outlines.push(pencil(run, .014))
+  }
+  return combine([fill, ...outlines])
 }
 
 /** 全屏纸纹叠层（屏幕空间颗粒 + 纤维） */

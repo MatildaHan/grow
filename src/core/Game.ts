@@ -8,7 +8,7 @@ import { Landscape } from './placement'
 export interface HudState {
   stage: number; total: number; progress: number; done: boolean
   quality: Quality; hint: string; names: string[]
-  tools: Tool[]; tool: string
+  tools: Tool[]; tool: string; directions: Tool[]; direction: string; canUndo: boolean
 }
 
 const DPR: Record<Quality, number> = { high: 2, mid: 1.5, low: 1 }
@@ -50,12 +50,12 @@ export class StageMachine {
 
   input(p: THREE.Vector2, kind: InputKind) {
     if (kind === 'up' || kind === 'cancel') { this.drawing = false; this.current?.input(p, kind); return }
+    if (kind === 'down') this.drawing = true
     if (this.completed && !this.done) return
     if (this.index < 0) {
       if (kind !== 'down') return
       this.enter(0)
     }
-    if (kind === 'down') this.drawing = true
     this.current?.input(p, kind)
   }
 
@@ -75,7 +75,7 @@ export class StageMachine {
       this.settle = .55
       track('stage_complete', { id: c.id, ms: Math.round(performance.now() - this.t0) })
     }
-    if (this.completed && (this.settle -= dt) <= 0) {
+    if (this.completed && !this.drawing && (this.settle -= dt) <= 0) {
       if (this.index + 1 < this.layers.length) this.enter(this.index + 1)
       else { this.done = true; track('game_complete') }
     }
@@ -165,6 +165,10 @@ export class Game {
       track('error', { where: 'webgl', msg: 'context lost' })
       this.onFatal('context-lost')
     }, o)
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') this.endStroke(true)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && this.machine.done) { e.preventDefault(); this.undo() }
+    }, o)
     document.addEventListener('visibilitychange', () => {
       cancelAnimationFrame(this.raf)
       this.endStroke(true)
@@ -186,6 +190,7 @@ export class Game {
   reset() {
     this.endStroke(true)
     this.machine.layers.forEach(l => { this.scene.remove(l.group); l.dispose() })
+    this.landscape.dispose()
     this.landscape = new Landscape()
     this.machine = new StageMachine(createLayers(this.landscape), this.scene)
     this.machine.layers.forEach(l => l.setQuality(this.quality))
@@ -218,12 +223,25 @@ export class Game {
     this.machine.current?.setTool(id); this.syncHud()
   }
 
+  selectDirection(id: string) {
+    this.endStroke(true)
+    this.machine.current?.setDirection(id); this.syncHud()
+  }
+
+  undo() {
+    if (!this.machine.done) return
+    if (this.pointer !== null) { this.endStroke(true); this.syncHud(); return }
+    if (this.landscape.undo() && this.machine.current) this.machine.current.notice = '已撤销上笔，腾空前的景物也已恢复'
+    this.syncHud()
+  }
+
   dispose() {
     cancelAnimationFrame(this.raf)
     this.endStroke(true)
     this.ac.abort()
     this.ro.disconnect()
     this.machine.layers.forEach(l => l.dispose())
+    this.landscape.dispose()
     this.paper.geometry.dispose()
     this.paper.material.dispose()
     this.scene.clear()
@@ -291,7 +309,12 @@ export class Game {
     h.done = m.done
     h.tools = c?.tools ?? EMPTY_TOOLS
     h.tool = c?.tool ?? ''
-    h.hint = c?.notice || (c ? !m.done && c.progress >= 1 ? m.painting ? '松开画笔，等最后一笔落下…' : '等最后一笔轻轻落下…' : c.hint : '点一下画纸，种下第一笔')
+    h.directions = c?.directions ?? EMPTY_TOOLS
+    h.direction = c?.direction ?? ''
+    h.canUndo = this.landscape.canUndo
+    h.hint = c && !m.done && c.progress >= 1
+      ? m.painting ? '松开画笔，等最后一笔落下…' : '等最后一笔轻轻落下…'
+      : c?.notice || c?.hint || '点一下画纸，种下第一笔'
   }
 
   private endStroke(cancelled = false) {

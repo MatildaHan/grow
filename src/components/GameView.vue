@@ -7,7 +7,7 @@ const canvas = ref<HTMLCanvasElement>()
 const fatal = ref('')
 const hud = reactive<HudState>({
   stage: -1, total: 8, progress: 0, done: false, quality: 'high', hint: '点一下画纸，种下第一笔', names: [],
-  tools: [], tool: '',
+  tools: [], tool: '', directions: [], direction: '', canUndo: false,
 })
 const chapter = computed(() => hud.stage < 0 ? '从一张空白开始' : hud.names[hud.stage] + (hud.done ? ' · 自由添画' : ''))
 const number = computed(() => String(Math.max(1, hud.stage + 1)).padStart(2, '0'))
@@ -32,6 +32,8 @@ const save = () => game?.screenshot()
 const again = () => game?.reset()
 const chooseStage = (i: number) => game?.selectStage(i)
 const chooseTool = (id: string) => game?.selectTool(id)
+const chooseDirection = (id: string) => game?.selectDirection(id)
+const undo = () => game?.undo()
 const reload = () => window.location.reload()
 </script>
 
@@ -45,7 +47,7 @@ const reload = () => window.location.reload()
       <p class="intro">不必画得完美<br>让风景按自己的模样生长</p>
     </header>
 
-    <div class="paper-frame">
+    <div class="paper-frame" :class="{ 'with-directions': hud.directions.length }">
       <canvas ref="canvas" aria-label="手绘生长画纸，点按开始，按住拖动绘画" />
       <div v-if="hud.stage < 0 && !fatal" class="invitation">
         <svg class="botanical-mark" viewBox="0 0 100 120" aria-hidden="true">
@@ -70,6 +72,11 @@ const reload = () => window.location.reload()
                   :aria-pressed="t.id === hud.tool" @click="chooseTool(t.id)">{{ t.label }}</button>
         </div>
       </div>
+      <div v-if="hud.directions.length" class="direction-row" role="toolbar" aria-label="麦穗生长方向">
+        <span>生长方向</span>
+        <button v-for="d in hud.directions" :key="d.id" class="tool" :class="{ selected: d.id === hud.direction }"
+                :aria-pressed="d.id === hud.direction" @click="chooseDirection(d.id)">{{ d.label }}</button>
+      </div>
       <p class="hint" role="status" aria-live="polite">{{ hud.hint }}</p>
       <div class="journey" aria-label="生长阶段">
         <button v-for="(n, i) in hud.names" :key="n" class="step" :disabled="!hud.done"
@@ -85,6 +92,7 @@ const reload = () => window.location.reload()
           <i :style="{ transform: `scaleX(${hud.progress})` }" />
         </div>
         <div v-if="hud.done" class="btns">
+          <button class="undo" :disabled="!hud.canUndo" @click="undo" title="撤销上笔（⌘ / Ctrl + Z）">撤销上笔</button>
           <button class="primary" @click="save">收藏这幅风景 <span aria-hidden="true">↓</span></button>
           <button @click="again">再种一个世界 <span aria-hidden="true">↻</span></button>
         </div>
@@ -130,6 +138,10 @@ canvas { width: 100%; height: 100%; position: absolute; inset: 0; display: block
 .toolbox { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; pointer-events: auto; padding: 3px 8px; border-radius: 3px; background: #f0f1e5d9; max-width: calc(100vw - 40px); }
 .tool { min-height: 32px; padding: 4px 10px; border-color: #87967e60; outline: none; font-size: 12px; }
 .tool.selected { background: #70866b; color: #f4f4e8; border-color: #70866b; }
+.direction-row { display: flex; align-items: center; gap: 6px; pointer-events: auto; padding: 3px 10px; background: #f0f1e5d9; border-radius: 3px; }
+.direction-row > span { font-size: 11px; color: #738262; margin-right: 4px; }
+button:disabled { opacity: .45; cursor: default; }
+button:disabled:hover { transform: none; background: #f0f1e5; }
 .edit-note { font-size: 11px; color: #65775d; margin: 0; padding: 0 8px; background: #f0f1e5d9; }
 .step i { display: grid; place-items: center; width: 20px; height: 20px; font-size: 9px; font-style: normal; border: 1px solid #94a18a70; border-radius: 50% 46% 48% 44%; }
 .step.done { color: #586f58; }
@@ -153,6 +165,9 @@ button span { margin-left: 7px; }
   .intro { font-size: 11px; letter-spacing: .02em; }
   .eyebrow { font-size: 8px; letter-spacing: .1em; }
   .paper-frame { top: 110px; bottom: 285px; mask-image: linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 30px), transparent); }
+  .paper-frame.with-directions { bottom: 332px; }
+  .btns { gap: 7px; }
+  .btns button { font-size: 11px; padding: 8px 10px; }
   .invitation { bottom: 0; }
   .journey { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 17px; }
   .workbench { gap: 9px; }
@@ -180,7 +195,7 @@ button span { margin-left: 7px; }
   h1 { font-size: 27px; }
   .eyebrow { font-size: 8px; }
   .intro { font-size: 10px; }
-  .paper-frame { top: 0; bottom: 0; mask-image: none; }
+  .paper-frame, .paper-frame.with-directions { top: 0; bottom: 0; mask-image: none; }
   .chapter, .paper-note { display: none; }
   .workbench { gap: 6px; bottom: max(10px, env(safe-area-inset-bottom)); }
   .edit-note { display: none; }
