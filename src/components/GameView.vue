@@ -36,20 +36,24 @@ const reload = () => window.location.reload()
   <main class="stage">
     <header class="masthead">
       <div class="title-lockup">
-        <span class="eyebrow">一笔一画 · 慢慢生长</span>
-        <h1>纸上生长<span class="title-dot">。</span></h1>
+        <span class="eyebrow">GROW FREELY · 向着光，也向着自己</span>
+        <h1>自由生长<span class="title-dot">。</span></h1>
       </div>
-      <p class="intro">把片刻留给自己<br>让一方风景，在纸上醒来</p>
+      <p class="intro">不必画得完美<br>让风景按自己的模样生长</p>
     </header>
 
     <div class="paper-frame" :class="{ complete: hud.done }">
       <canvas ref="canvas" aria-label="手绘生长画纸，点按开始，按住拖动绘画" />
       <div v-if="hud.stage < 0 && !fatal" class="invitation">
-        <svg viewBox="0 0 80 80" aria-hidden="true"><path d="M40 60V32M40 45C21 45 19 30 22 24C37 24 42 32 40 45ZM40 37C58 37 62 20 59 16C45 18 38 25 40 37ZM25 62C34 58 46 58 55 62" /></svg>
+        <svg class="botanical-mark" viewBox="0 0 100 120" aria-hidden="true">
+          <path class="stem" d="M50 103C46 84 55 65 49 44M50 84C32 80 25 66 24 61C43 65 47 72 50 84ZM51 70C67 68 74 58 77 51C61 52 54 60 51 70Z" />
+          <g class="petals"><path d="M50 46C40 35 43 20 50 15C60 24 60 38 50 46ZM50 46C35 46 25 34 27 27C42 26 48 35 50 46ZM50 46C39 59 24 57 20 50C28 39 42 39 50 46ZM50 46C59 57 74 56 80 49C72 37 59 39 50 46ZM50 46C63 43 74 31 71 25C57 25 50 33 50 46Z" /></g>
+          <circle cx="50" cy="45" r="6" /><path d="M34 106C43 101 58 102 67 105M41 109L38 111M60 107L63 110" />
+        </svg>
         <p>每一幅风景，都从一笔开始</p>
         <span>点一下画纸 · 轻轻拖动</span>
       </div>
-      <span class="paper-note" aria-hidden="true">{{ hud.done ? '属于你的，小小世界' : 'PAPER GROW / 生长手记' }}</span>
+      <span class="paper-note" aria-hidden="true">{{ hud.done ? '属于你的，小小世界' : 'GROW FREELY / 自由生长' }}</span>
     </div>
 
     <footer class="workbench">
@@ -85,74 +89,82 @@ const reload = () => window.location.reload()
 </template>
 
 <style scoped>
-.stage { position: relative; height: 100%; min-height: 480px; display: flex; flex-direction: column; padding: max(28px, env(safe-area-inset-top)) 5vw max(22px, env(safe-area-inset-bottom)); box-sizing: border-box; gap: 22px; }
-.masthead { display: flex; align-items: center; justify-content: space-between; flex: none; }
-.title-lockup { flex-shrink: 0; white-space: nowrap; }
-.eyebrow { font-size: 11px; letter-spacing: .25em; color: #8e866f; }
-h1 { margin: 6px 0 0; font-weight: 400; font-size: 34px; letter-spacing: .13em; line-height: 1.2; }
-.title-dot { color: #a96648; }
-.intro { margin: 0; color: #8a826e; text-align: right; font-size: 13px; line-height: 1.9; letter-spacing: .1em; }
-.paper-frame { position: relative; flex: 1; min-height: 160px; isolation: isolate; background: #f2ead8; border: 1px solid #aa9d7740; border-radius: 3px 7px 5px 4px; box-shadow: 0 5px 18px #5b4b3110, 0 1px 2px #5b4b3110; overflow: hidden; }
-.paper-frame::after { content: ''; position: absolute; inset: 7px; border: 1px solid #fff5; border-radius: 2px 5px; pointer-events: none; }
+.stage { position: relative; height: 100%; min-height: 480px; isolation: isolate; }
+.masthead { position: absolute; z-index: 2; top: max(28px, env(safe-area-inset-top)); left: 4vw; right: 4vw; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+.title-lockup { white-space: nowrap; }
+.eyebrow { font-size: 10px; letter-spacing: .2em; color: #7c8a75; }
+h1 { margin: 8px 0 0; font-weight: 400; font-size: 48px; letter-spacing: .12em; line-height: 1.2; color: #5a6d5a; }
+.title-dot { color: #a39469; }
+.intro { margin: 0; color: #7c8670; text-align: right; font-size: 13px; line-height: 2; letter-spacing: .1em; }
+.paper-frame { position: absolute; inset: 0; overflow: hidden; }
 canvas { width: 100%; height: 100%; position: absolute; inset: 0; display: block; touch-action: none; cursor: crosshair; }
 .complete canvas { cursor: default; }
-.invitation { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; pointer-events: none; color: #7e8863; }
-.invitation svg { width: 68px; height: 68px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-.invitation p { font-size: 18px; letter-spacing: .12em; margin: 16px 0 10px; color: #69634f; }
-.invitation span { font-size: 12px; letter-spacing: .15em; color: #9e957d; }
-.paper-note { position: absolute; left: 20px; bottom: 15px; font-size: 9px; letter-spacing: .18em; color: #5c5c4680; pointer-events: none; }
-.workbench { display: grid; justify-items: center; flex: none; gap: 11px; }
-.controls { height: 42px; display: grid; place-items: center; }
-.chapter { display: flex; align-items: baseline; gap: 12px; }
-.chapter-number { font-size: 20px; color: #9a7055; font-variant-numeric: tabular-nums; }
-.chapter-number small { font-size: 10px; color: #a89d85; letter-spacing: .12em; }
-.chapter-title { font-size: 17px; letter-spacing: .12em; }
-.hint { margin: 0; font-size: 14px; letter-spacing: .08em; color: #8b8069; text-align: center; line-height: 1.5; }
-.journey { display: flex; gap: 22px; margin-top: 3px; }
-.step { display: flex; align-items: center; gap: 5px; color: #a39a83; font-size: 12px; white-space: nowrap; }
-.step i { display: grid; place-items: center; width: 20px; height: 20px; font-size: 9px; font-style: normal; border: 1px solid #b4a98c60; border-radius: 50% 46% 48% 44%; }
-.step.done { color: #7f8c68; }
+.invitation { position: absolute; inset: 0 0 80px; display: flex; flex-direction: column; justify-content: center; align-items: center; pointer-events: none; color: #697c62; }
+.botanical-mark { width: 100px; height: 120px; fill: none; stroke: #647661; stroke-width: 1.15; stroke-linecap: round; stroke-linejoin: round; }
+.botanical-mark .stem { fill: #c8d5b4; }
+.botanical-mark .petals { fill: #dae3d8; }
+.botanical-mark circle { fill: #c9ab91; stroke: #968876; }
+.invitation p { font-size: 19px; letter-spacing: .13em; margin: 20px 0 10px; color: #58684f; }
+.invitation span { font-size: 12px; letter-spacing: .15em; color: #8e967e; }
+.paper-note { position: absolute; left: 4vw; bottom: 24px; font-size: 9px; letter-spacing: .16em; color: #68765e80; pointer-events: none; }
+.workbench { position: absolute; z-index: 2; left: 0; right: 0; bottom: max(20px, env(safe-area-inset-bottom)); display: grid; justify-items: center; gap: 10px; pointer-events: none; }
+.chapter { display: flex; align-items: baseline; gap: 12px; padding: 3px 12px; background: #f0f1e5db; border-radius: 3px 5px 2px 4px; }
+.chapter-number { font-size: 16px; color: #738262; font-variant-numeric: tabular-nums; }
+.chapter-number small { font-size: 10px; color: #96a086; letter-spacing: .12em; }
+.chapter-title { font-size: 15px; letter-spacing: .12em; color: #52674f; }
+.hint { margin: 0; font-size: 13px; letter-spacing: .08em; color: #626f58; text-align: center; line-height: 1.5; padding: 6px 18px; border-radius: 45% 48% 43% 49% / 12% 17% 14% 18%; background: #f0f1e5db; }
+.journey { display: flex; gap: 19px; padding: 5px 15px; background: #f0f1e5c4; border-radius: 4px 7px 3px 5px; }
+.step { display: flex; align-items: center; gap: 5px; color: #7c8870; font-size: 12px; white-space: nowrap; }
+.step i { display: grid; place-items: center; width: 20px; height: 20px; font-size: 9px; font-style: normal; border: 1px solid #94a18a70; border-radius: 50% 46% 48% 44%; }
+.step.done { color: #586f58; }
 .step.done i { border-color: #87966b70; background: #87966b12; }
-.step.on { color: #9c6447; }
-.step.on i { color: #faf5e7; border-color: #ad7958; background: #ad7958; }
-.bar { width: min(220px, 55vw); height: 2px; background: #a79d8125; border-radius: 2px; overflow: hidden; }
-.bar i { display: block; height: 100%; background: #8d9b6b; transform-origin: left; transition: transform .12s linear; }
-.btns { display: flex; gap: 10px; }
-button { font: inherit; font-size: 13px; letter-spacing: .06em; padding: 10px 18px; min-height: 42px; border: 1px solid #95866b70; background: #f8f2e6; color: #76664f; border-radius: 3px 5px 4px 6px; cursor: pointer; transition: background .2s, transform .2s; }
-button.primary { color: #f8f2e6; background: #7f8d65; border-color: #7f8d65; }
-button:hover { background: #eee5d2; transform: translateY(-1px); }
-button.primary:hover { background: #707e56; }
-button:focus-visible { outline: 2px solid #a96f4a; outline-offset: 4px; }
+.step.on { color: #6a6f46; }
+.step.on i { color: #f6f6ea; border-color: #7e8e70; background: #7e8e70; }
+.controls { height: 42px; display: grid; place-items: center; }
+.bar { width: min(220px, 55vw); height: 2px; background: #667a5630; border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: #728761; transform-origin: left; transition: transform .12s linear; }
+.btns { display: flex; gap: 10px; pointer-events: auto; }
+button { font: inherit; font-size: 13px; letter-spacing: .06em; padding: 10px 18px; min-height: 42px; border: 1px solid #71816d; outline: 1px solid #71816d30; outline-offset: 2px; background: #f0f1e5; color: #53684f; border-radius: 2px 4px 1px 3px; cursor: pointer; transition: background .2s, transform .2s; }
+button.primary { color: #f4f4e8; background: #526a5c; border-color: #526a5c; }
+button:hover { background: #e3e8d7; transform: translateY(-1px); }
+button.primary:hover { background: #425b4c; }
+button:focus-visible { outline: 2px solid #a08960; outline-offset: 4px; }
 button span { margin-left: 7px; }
-.fatal { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; background: #f2ead8; }
+.fatal { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; background: #f0efe5; }
 @media (max-width: 700px) {
-  .stage { padding-left: 20px; padding-right: 20px; gap: 20px; }
-  h1 { font-size: 29px; }
-  .intro { font-size: 11px; letter-spacing: .03em; }
-  .eyebrow { font-size: 10px; }
-  .journey { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px 17px; }
-  .invitation p { font-size: 15px; letter-spacing: .07em; }
+  .masthead { left: 20px; right: 20px; }
+  h1 { font-size: 34px; }
+  .intro { font-size: 11px; letter-spacing: .02em; }
+  .eyebrow { font-size: 8px; letter-spacing: .1em; }
+  .paper-frame { top: 110px; bottom: 205px; mask-image: linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 30px), transparent); }
+  .invitation { bottom: 0; }
+  .journey { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 17px; }
+  .workbench { gap: 9px; }
+  .invitation p { font-size: 15px; letter-spacing: .06em; }
   .hint { font-size: 12px; }
-  .paper-note { left: 13px; bottom: 12px; font-size: 8px; }
+  .paper-note { left: 20px; bottom: 10px; font-size: 8px; }
   button { padding: 9px 12px; }
 }
-@media (max-height: 600px) and (min-width: 701px) {
-  .stage { gap: 12px; padding-top: 16px; padding-bottom: 14px; min-height: 360px; }
-  h1 { font-size: 25px; }
-  .workbench { gap: 6px; }
-}
 @media (max-width: 360px) {
-  h1 { font-size: 25px; letter-spacing: .08em; }
+  h1 { font-size: 29px; letter-spacing: .08em; }
   .intro { font-size: 10px; white-space: nowrap; }
+  .eyebrow { font-size: 7px; }
+}
+@media (max-height: 600px) and (min-width: 701px) {
+  .masthead { top: 16px; }
+  h1 { font-size: 32px; }
+  .workbench { gap: 6px; bottom: 14px; }
 }
 @media (max-height: 520px) {
-  .stage { min-height: 320px; padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); gap: 10px; }
-  h1 { font-size: 23px; }
-  .eyebrow { font-size: 9px; }
+  .stage { min-height: 320px; }
+  .masthead { top: max(10px, env(safe-area-inset-top)); }
+  h1 { font-size: 27px; }
+  .eyebrow { font-size: 8px; }
   .intro { font-size: 10px; }
-  .chapter { display: none; }
-  .workbench { gap: 6px; }
-  .journey { gap: 6px 12px; margin: 0; }
+  .paper-frame { top: 0; bottom: 0; mask-image: none; }
+  .chapter, .paper-note { display: none; }
+  .workbench { gap: 6px; bottom: max(10px, env(safe-area-inset-bottom)); }
+  .journey { gap: 6px 12px; }
   .controls { height: 36px; }
   button { min-height: 36px; padding-top: 7px; padding-bottom: 7px; }
 }

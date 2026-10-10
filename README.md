@@ -1,6 +1,8 @@
-# 纸上生长 (paper-grow)
+# 自由生长 (free-grow)
 
 手绘风格的分层生长游戏：Vue 3 + Three.js + TypeScript + Vite。
+
+视觉采用植物插画的细线轮廓、叶脉排线、灰绿填色与轻纸纹，参考[密度领域](https://www.minedensity.top/)的手绘风格。景物线稿由本项目的几何代码绘制，保留八阶段生长流程。
 
 ```bash
 npm i

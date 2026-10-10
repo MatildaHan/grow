@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { type Layer, type Quality, type InputKind, Y0, clamp01, easeOut } from './types'
-import { inkMat, mk, ribbon, uTime, uMotion } from './materials'
+import { inkMat, mk, sketched, sketchedRibbon, pencil, combine, uTime, uMotion, type InkOpts } from './materials'
 
 const QF: Record<Quality, number> = { high: 1, mid: 0.6, low: 0.35 }
 const V2 = (x: number, y: number) => new THREE.Vector2(x, y)
@@ -158,18 +158,20 @@ class Painter extends Base {
 
 /* 1 草地 */
 class GrassLayer extends Painter {
-  private ground = inkMat('#b4c395', { mode: 1, shade: 0.7 })
+  private ground = inkMat('#d3dcbc', { mode: 1, shade: .5, hatch: .25 })
   private shown = 0
   constructor() {
-    const s = new THREE.Shape()
+    const blades: THREE.BufferGeometry[] = []
     for (const [x, h, bend] of [[-.13, .34, -.1], [0, .55, .12], [.12, .42, .16]]) {
+      const s = new THREE.Shape()
       s.moveTo(x - .025, 0)
       s.quadraticCurveTo(x - .04, h * .5, x + bend, h)
       s.quadraticCurveTo(x + .045, h * .42, x + .025, 0)
+      s.closePath(); blades.push(sketched(s, .009, 8))
     }
     super('grass', '草地', '按住并拖动，让草从纸上长出来',
-      new Scatter(new THREE.ShapeGeometry(s), inkMat('#76955f', { mode: 3, sway: .7 }), 2400),
-      { density: 30, spread: 0.38, z: -3, minY: -20, maxY: Y0 - 0.05, size: .85, distance: 40 })
+      new Scatter(combine(blades), inkMat('#93ad83', { mode: 3, sway: .7, ink: '#627b60' }), 2400),
+      { density: 21, spread: 0.48, z: -3, minY: -20, maxY: Y0 - 0.05, size: .7, distance: 40 })
     const g = mk(new THREE.PlaneGeometry(60, 30), this.ground)
     g.position.set(0, Y0 - 15, -3.2)
     this.group.add(g)
@@ -184,27 +186,36 @@ class GrassLayer extends Painter {
 class SkyLayer extends Reveal {
   private bands: Mat[] = []
   private clouds: Mat[] = []
-  private sun = inkMat('#d98c63', { base: -0.7, shade: .4 })
+  private sun = inkMat('#e8cd78', { base: -0.7, shade: .35, ink: '#9e905c', hatch: .35 })
+  private rays = inkMat('#ad9a60', { base: -.95, ink: '#ad9a60', opacity: .65 })
   constructor() {
     super('sky', '天空', '轻轻拖动，让天空染上颜色', 0.12)
-    const m = inkMat('#f1e3bd', { mode: 1, shade: .35, tint: '#b8d1ce' })
+    const m = inkMat('#f0efe4', { mode: 1, shade: .15, tint: '#dde7df' })
     const wash = mk(new THREE.PlaneGeometry(60, 40), m)
     wash.position.set(0, Y0 + 20, -5)
     this.group.add(wash); this.bands.push(m)
     for (const [x, y, size] of [[-4, 2.9, 1], [.3, 3.5, .7], [6, 2.4, .6]]) {
-      const cloud = inkMat('#faf3df', { mode: 1, shade: .2 })
-      const mesh = mk(new THREE.ShapeGeometry(blob(1.1 * size, .23 * size, 4)), cloud)
+      const cloud = inkMat('#f8f7ee', { mode: 1, shade: .2, ink: '#a4b3a3', opacity: .8 })
+      const mesh = mk(sketched(blob(1.1 * size, .23 * size, 4), .01), cloud)
       mesh.position.set(x, y, -4.7)
       this.group.add(mesh); this.clouds.push(cloud)
     }
-    const sun = mk(new THREE.CircleGeometry(0.7, 32), this.sun)
-    sun.position.set(4.5, 3.1, -4.9)
+    const sun = mk(sketched(blob(.7, .7, 2), .015), this.sun)
+    sun.position.set(4, 3.1, -4.9)
     this.group.add(sun)
+    const rays: THREE.BufferGeometry[] = []
+    for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6
+      rays.push(pencil([V2(Math.cos(a) * .85, Math.sin(a) * .85), V2(Math.cos(a + .012) * .98, Math.sin(a + .012) * .98)], .025))
+    }
+    const rayMesh = mk(combine(rays), this.rays)
+    rayMesh.position.copy(sun.position); this.group.add(rayMesh)
   }
   protected apply(g: number) {
     this.bands.forEach(m => setGrow(m, g))
     this.clouds.forEach((m, i) => setGrow(m, clamp01((g - .35 - i * .08) / .4)))
     setGrow(this.sun, clamp01((g - 0.6) / 0.4))
+    setGrow(this.rays, clamp01((g - .7) / .3))
   }
 }
 
@@ -213,8 +224,8 @@ class MountainLayer extends Reveal {
   private far: Mat; private near: Mat
   constructor() {
     super('mountain', '远山', '拖动，把远山一座座托起', 0.1)
-    this.far = this.ridge(1, 1.6, 2.6, '#9db0aa', -4)
-    this.near = this.ridge(7, 0.9, 2.0, '#6f8b84', -3.6)
+    this.far = this.ridge(1, 1.6, 2.6, '#c4d3c8', -4)
+    this.near = this.ridge(7, 0.9, 2.0, '#afc5b6', -3.6)
   }
   private ridge(seed: number, base: number, amp: number, color: string, z: number) {
     let s = seed
@@ -230,8 +241,8 @@ class MountainLayer extends Reveal {
     const curve = new THREE.CatmullRomCurve3(points)
     for (const p of curve.getPoints(360)) sh.lineTo(p.x, p.y)
     sh.lineTo(32, B); sh.closePath()
-    const m = inkMat(color, { base: B })
-    const mesh = mk(new THREE.ShapeGeometry(sh), m)
+    const m = inkMat(color, { base: B, ink: '#829b88', opacity: .85, hatch: 1 })
+    const mesh = mk(sketched(sh, .015), m)
     mesh.position.z = z
     this.group.add(mesh)
     return m
@@ -248,8 +259,8 @@ class RibbonLayer extends Reveal {
   constructor(id: string, label: string, hint: string, curve: THREE.Curve<THREE.Vector2>,
               w0: number, w1: number, color: string, z: number, flow = false) {
     super(id, label, hint, 0.09)
-    this.m = inkMat(color, { mode: 2, shade: flow ? 0.7 : 0.5, flow, edge: true })
-    const mesh = mk(ribbon(curve, w0, w1), this.m)
+    this.m = inkMat(color, { mode: 2, shade: .4, flow, hatch: .35, ink: flow ? '#6d9691' : '#9c977c' })
+    const mesh = mk(sketchedRibbon(curve, w0, w1), this.m)
     mesh.position.z = z
     this.group.add(mesh)
   }
@@ -266,26 +277,40 @@ class TreeLayer extends Base {
     if (this.trees.length >= MAX_TREES) return
     const y = Math.max(-6, Math.min(p.y, Y0 - 0.4))
     const g = new THREE.Group(), ms: { m: Mat; delay: number }[] = []
-    const add = (geo: THREE.BufferGeometry, color: string, base: number, delay: number, z: number) => {
-      const m = inkMat(color, { base, sway: .12 })
+    const add = (geo: THREE.BufferGeometry, color: string, base: number, delay: number, z: number, opts: InkOpts = {}) => {
+      const m = inkMat(color, { base, sway: .12, ...opts })
       const mesh = mk(geo, m); mesh.position.z = z; g.add(mesh); ms.push({ m, delay })
     }
     const n = this.trees.length
-    const trunk = new THREE.CubicBezierCurve(V2(0, 0), V2(-.04, .5), V2(.07, 1), V2(.02, 1.8))
-    add(ribbon(trunk, .16, .07, 24), '#735c43', 0, 0, -.02)
-    for (const side of [-1, 1]) {
-      add(ribbon(new THREE.QuadraticBezierCurve(V2(0, .6), V2(side * .28, .85), V2(side * .4, 1.3)), .07, .025, 16), '#735c43', .6, .16, -.01)
+    for (const [x, cy, rx, ry] of [[-.36, 1.35, .6, .6], [.36, 1.5, .62, .65], [0, 1.95, .62, .65]]) {
+      add(new THREE.ShapeGeometry(blob(rx, ry, n + cy)).translate(x, cy, 0), '#bfd0a3', cy - ry, .15, -.04,
+        { opacity: .4, hatch: .6 })
     }
-    for (const [x, cy, rx, ry, color, delay] of [
-      [-.38, 1.35, .62, .64, '#729365', .25],
-      [.4, 1.48, .64, .7, '#88a471', .35],
-      [.02, 1.94, .69, .74, n % 2 ? '#9aac7c' : '#7e9e6c', .5],
-    ] as const) {
-      const outline = new THREE.ShapeGeometry(blob(rx, ry, n + cy)).translate(x, cy, 0)
-      const fill = new THREE.ShapeGeometry(blob(rx * .97, ry * .97, n + cy)).translate(x, cy + .015, 0)
-      add(outline, '#657f56', cy - ry, delay, .01 + delay * .02)
-      add(fill, color, cy - ry, delay, .02 + delay * .02)
+    const stems: THREE.BufferGeometry[] = [], leaves: THREE.BufferGeometry[] = [], veins: THREE.BufferGeometry[] = []
+    const trunk = new THREE.CubicBezierCurve(V2(0, 0), V2(-.07, .6), V2(.09, 1.7), V2(0, 2.25))
+    stems.push(pencil(trunk.getPoints(36), .035))
+    const leaf = (x: number, y: number, length: number, angle: number) => {
+      const shape = new THREE.Shape()
+      shape.moveTo(0, 0)
+      shape.bezierCurveTo(-.3, length * .35, -.22, length * .72, 0, length)
+      shape.bezierCurveTo(.25, length * .68, .25, length * .2, 0, 0)
+      const geo = sketched(shape, .013, 12).rotateZ(angle).translate(x, y, 0)
+      leaves.push(geo)
+      const lines = [pencil(new THREE.QuadraticBezierCurve(V2(0, 0), V2(.025, length * .5), V2(0, length * .92)).getPoints(12), .009)]
+      for (const side of [-1, 1]) for (const t of [.3, .5, .7]) {
+        lines.push(pencil([V2(0, length * t), V2(side * .14, length * (t + .13))], .006))
+      }
+      veins.push(combine(lines).rotateZ(angle).translate(x, y, 0))
     }
+    for (let row = 0; row < 4; row++) for (const side of [-1, 1]) {
+      const y = .85 + row * .33, x = side * (.2 + (3 - row) * .035)
+      stems.push(pencil(new THREE.QuadraticBezierCurve(V2(0, y - .18), V2(side * .13, y -.02), V2(x, y)).getPoints(12), .022))
+      leaf(x, y, .7 + Math.sin(n + row) * .06, -side * (.65 + row * .04))
+    }
+    leaf(0, 2.1, .65, .08)
+    add(combine(stems), '#6b7256', 0, 0, -.01, { ink: '#6b7256' })
+    add(combine(leaves), n % 2 ? '#adbf8e' : '#9eb78b', .65, .3, .02, { hatch: .8, ink: '#5f775b' })
+    add(combine(veins), '#647c5c', .65, .5, .03, { ink: '#647c5c', opacity: .6 })
     g.position.set(Math.max(-6.1, Math.min(6.1, p.x)), y, -y * 0.01)
     g.scale.setScalar(0.62 + (Y0 - y) * 0.065)
     this.group.add(g)
@@ -317,11 +342,9 @@ class HouseLayer extends Base {
     wall.moveTo(-.9, 0); wall.lineTo(.91, .015); wall.lineTo(.87, 1.28); wall.lineTo(-.88, 1.24); wall.closePath()
     const spec: [THREE.BufferGeometry, string, number, number, number, number][] = [
       // 几何, 颜色, 底边, z偏移, 开始, 时长
-      [new THREE.ShapeGeometry(wall), '#a18c68', 0, 0, 0, .8],
-      [new THREE.ShapeGeometry(wall).scale(.97, .98, 1).translate(0, .02, 0), '#eee0bd', 0, .01, 0, .8],
+      [sketched(wall, .024), '#e8e5cb', 0, .01, 0, .8],
       [new THREE.PlaneGeometry(.2, .6).translate(.6, 1.55, 0), '#ae8160', 1.25, -.01, .2, .6],
-      [new THREE.ShapeGeometry(roof), '#884f3d', 1.18, .02, .35, .8],
-      [new THREE.ShapeGeometry(roof).scale(.96, .97, 1).translate(0, .03, 0), '#c7805b', 1.18, .03, .35, .8],
+      [sketched(roof, .022), '#bb9984', 1.18, .03, .35, .8],
       [new THREE.PlaneGeometry(.35, .64).translate(-.37, .32, 0), '#806248', 0, .04, .65, .5],
       [new THREE.PlaneGeometry(.42, .39).translate(.43, .76, 0), '#957957', .565, .04, .8, .45],
       [new THREE.PlaneGeometry(.34, .31).translate(.43, .76, 0), '#efd799', .605, .05, .8, .45],
@@ -329,7 +352,7 @@ class HouseLayer extends Base {
       [new THREE.PlaneGeometry(.34, .025).translate(.43, .76, 0), '#957957', .7475, .06, .95, .35],
     ]
     for (const [geo, color, base, dz, start, dur] of spec) {
-      const m = inkMat(color, { base })
+      const m = inkMat(color, { base, ink: '#796f58', hatch: .65 })
       const mesh = mk(geo, m)
       mesh.position.z = dz
       g.add(mesh)
@@ -350,19 +373,23 @@ class HouseLayer extends Base {
 /* 8 麦田 */
 class WheatLayer extends Painter {
   constructor() {
+    const grains: THREE.BufferGeometry[] = []
     const s = new THREE.Shape()
     s.moveTo(-.018, 0); s.quadraticCurveTo(.015, .35, -.018, .72)
     s.lineTo(.018, .72); s.quadraticCurveTo(.05, .35, .018, 0)
+    s.closePath(); grains.push(sketched(s, .008, 6))
     for (let i = 0; i < 4; i++) {
       const y = .48 + i * .085
       for (const side of [-1, 1]) {
-        s.moveTo(0, y); s.quadraticCurveTo(side * .13, y + .015, side * .1, y + .12)
-        s.quadraticCurveTo(side * .02, y + .12, 0, y)
+        const grain = new THREE.Shape()
+        grain.moveTo(0, y); grain.quadraticCurveTo(side * .13, y + .015, side * .1, y + .12)
+        grain.quadraticCurveTo(side * .02, y + .12, 0, y)
+        grain.closePath(); grains.push(sketched(grain, .008, 6))
       }
     }
     super('wheat', '麦田', '拖动，在田里撒下一片麦子',
-      new Scatter(new THREE.ShapeGeometry(s), inkMat('#c7a45c', { mode: 3, sway: .85 }), 1800),
-      { density: 24, spread: 0.45, z: -1.5, minY: -20, maxY: Y0 - 0.3, size: .85, distance: 32 })
+      new Scatter(combine(grains), inkMat('#c9bd80', { mode: 3, sway: .85, ink: '#948653', hatch: .5 }), 1800),
+      { density: 18, spread: 0.55, z: -1.5, minY: -20, maxY: Y0 - 0.3, size: .85, distance: 32 })
   }
 }
 
@@ -372,11 +399,11 @@ export const createLayers = (): Layer[] => [
   new MountainLayer(),
   new RibbonLayer('path', '小路', '沿着想走的方向拖动，铺出一条小路',
     new THREE.CubicBezierCurve(V2(0.4, Y0 - 0.05), V2(-4, -3.2), V2(3, -6.5), V2(-5, -24)),
-    0.18, 3.6, '#dcc9a0', -2.5),
+    0.18, 3.6, '#e0dcc0', -2.5),
   new TreeLayer(),
   new HouseLayer(),
   new RibbonLayer('river', '河流', '从远处向近处拖动，引一条河来',
     new THREE.CubicBezierCurve(V2(3, Y0 - 0.05), V2(6, -2.6), V2(1.5, -8), V2(4.5, -24)),
-    0.15, 5.5, '#7fb0b8', -2.7, true),
+    0.15, 5.5, '#adcac4', -2.7, true),
   new WheatLayer(),
 ]

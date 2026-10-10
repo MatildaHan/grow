@@ -102,7 +102,7 @@ export class Game {
       this.paper.geometry.dispose(); this.paper.material.dispose()
       throw e
     }
-    this.renderer.setClearColor('#f2ead8')
+    this.renderer.setClearColor('#f0efe5')
     this.camera.position.z = 10
     this.scene.add(this.paper)
 
@@ -178,7 +178,7 @@ export class Game {
       if (!b) return
       const a = document.createElement('a')
       a.href = URL.createObjectURL(b)
-      a.download = 'paper-grow.png'
+      a.download = '自由生长.png'
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 1000)
       track('screenshot')
