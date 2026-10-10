@@ -1,58 +1,73 @@
 import * as THREE from 'three'
 
 export const uTime = { value: 0 }
-const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches
+export const uMotion = { value: 1 }
 
 const VERT = /* glsl */ `
-uniform float uGrow,uBase,uMode,uTime,uSway;
+uniform float uGrow,uBase,uMode,uTime,uSway,uMotion;
 attribute float aBorn;
 attribute float aSeed;
-varying vec2 vUv; varying vec3 vW; varying float vSeed;
+varying vec2 vUv; varying vec3 vW; varying float vSeed,vGrowth;
 void main(){
   vUv=uv; vSeed=aSeed;
   vec3 p=position;
   float g=1.;
   if(uMode<.5) g=clamp(uGrow*1.4-aSeed*.4,0.,1.);
-  else if(uMode>2.5) g=clamp((uTime-aBorn)*1.2,0.,1.);
+  else if(uMode>2.5) {
+    float t=clamp((uTime-aBorn)*mix(4.,1.6,uMotion),0.,1.);
+    g=1.-pow(1.-t,3.);
+  }
+  vGrowth=g;
   if(uMode<.5||uMode>2.5) p.y=uBase+(p.y-uBase)*g;
   vec4 m=vec4(p,1.);
   #ifdef USE_INSTANCING
   m=instanceMatrix*m;
   #endif
   m=modelMatrix*m;
-  m.x+=sin(uTime*1.6+m.x*.8+aSeed*6.)*uSway*max(position.y,0.)*.25*g;
+  m.x+=sin(uTime*.85+m.x*.65+aSeed*6.)*uSway*uMotion*max(position.y-uBase,0.)*.09*g;
   vW=m.xyz;
   gl_Position=projectionMatrix*viewMatrix*m;
 }`
 
 // uMode: 0 底边抽长  1 噪声晕染  2 沿 uv.x 铺开  3 实例按出生时间生长
 const FRAG = /* glsl */ `
-uniform vec3 uColor; uniform float uGrow,uMode,uShade,uTime,uFlow;
-varying vec2 vUv; varying vec3 vW; varying float vSeed;
+uniform vec3 uColor,uTint; uniform float uGrow,uMode,uShade,uTime,uFlow,uMotion,uEdge,uGradient;
+varying vec2 vUv; varying vec3 vW; varying float vSeed,vGrowth;
 float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
   return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
 void main(){
-  if(uMode>.5&&uMode<1.5&&n(vW.xy*.9)>uGrow*1.25-.1) discard;
-  if(uMode>1.5&&uMode<2.5&&vUv.x>uGrow) discard;
-  float l=n(vW.xy*1.7)*.6+clamp(vUv.y,0.,1.)*.4+(vSeed-.5)*.3;
-  if(uFlow>.5) l+=step(.82,n(vec2(vUv.x*40.-uTime*1.5,vUv.y*6.)))*.35;
-  float s=l<.35?.82:(l<.68?1.:1.14);          // 三色阶
-  gl_FragColor=vec4(mix(uColor,uColor*s,uShade),1.);
+  float wash=n(vW.xy*1.1), alpha=1.;
+  if(uMode<.5||uMode>2.5) alpha=smoothstep(0.,.08,vGrowth);
+  if(uMode>.5&&uMode<1.5) alpha=smoothstep(wash-.15,wash+.15,uGrow*1.4-.2);
+  if(uMode>1.5&&uMode<2.5) {
+    alpha=1.-smoothstep(uGrow*1.08-.04,uGrow*1.08+.015,vUv.x+(wash-.5)*.018);
+    alpha*=smoothstep(0.,.025,uGrow);
+    float edge=min(vUv.y,1.-vUv.y);
+    alpha*=smoothstep(0.,.035,edge);
+  }
+  if(alpha<.002) discard;
+  float pigment=wash*.55+n(vW.xy*5.)*.25+vSeed*.2;
+  vec3 color=mix(uColor,uTint,clamp((vW.y+.5)/7.,0.,1.)*uGradient);
+  color*=1.+(pigment-.5)*.22*uShade;
+  if(uEdge>.5) color*=mix(.84,1.,smoothstep(.02,.12,min(vUv.y,1.-vUv.y)));
+  if(uFlow>.5) color+=vec3(.06)*smoothstep(.73,.88,n(vec2(vUv.x*32.-uTime*.45*uMotion,vUv.y*5.)));
+  gl_FragColor=vec4(color,alpha);
   #include <colorspace_fragment>
 }`
 
-export interface InkOpts { mode?: 0 | 1 | 2 | 3; base?: number; shade?: number; sway?: number; flow?: boolean }
+export interface InkOpts { mode?: 0 | 1 | 2 | 3; base?: number; shade?: number; sway?: number; flow?: boolean; edge?: boolean; tint?: string }
 
 export function inkMat(color: string, o: InkOpts = {}) {
   return new THREE.ShaderMaterial({
     uniforms: {
-      uColor: { value: new THREE.Color(color) },
+      uColor: { value: new THREE.Color(color) }, uTint: { value: new THREE.Color(o.tint ?? color) },
       uGrow: { value: 0 }, uBase: { value: o.base ?? 0 }, uMode: { value: o.mode ?? 0 },
-      uShade: { value: o.shade ?? 1 }, uSway: { value: REDUCED ? 0 : o.sway ?? 0 },
-      uFlow: { value: o.flow ? 1 : 0 }, uTime,
+      uShade: { value: o.shade ?? 1 }, uSway: { value: o.sway ?? 0 },
+      uFlow: { value: o.flow ? 1 : 0 }, uEdge: { value: o.edge ? 1 : 0 },
+      uGradient: { value: o.tint ? 1 : 0 }, uTime, uMotion,
     },
-    vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide,
+    vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, transparent: true, depthWrite: false,
   })
 }
 
@@ -68,7 +83,8 @@ export function mk(geo: THREE.BufferGeometry, mat: THREE.Material) {
 export function ribbon(c: THREE.Curve<THREE.Vector2>, w0: number, w1: number, seg = 64) {
   const pos: number[] = [], uv: number[] = [], idx: number[] = []
   for (let i = 0; i <= seg; i++) {
-    const t = i / seg, p = c.getPoint(t), tg = c.getTangent(t), w = (w0 + (w1 - w0) * t) / 2
+    const t = i / seg, p = c.getPoint(t), tg = c.getTangent(t)
+    const w = (w0 + (w1 - w0) * t) / 2 * (1 + Math.sin(t * 37) * .025 + Math.sin(t * 71) * .012)
     pos.push(p.x - tg.y * w, p.y + tg.x * w, 0, p.x + tg.y * w, p.y - tg.x * w, 0)
     uv.push(t, 0, t, 1)
     if (i < seg) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2) }

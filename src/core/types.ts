@@ -9,6 +9,7 @@ export interface Layer {
   readonly hint: string
   readonly group: THREE.Group
   progress: number
+  readonly settled: boolean
   input(p: THREE.Vector2, kind: InputKind): void
   update(dt: number): void
   setQuality(q: Quality): void
