@@ -1,7 +1,8 @@
 import type * as THREE from 'three'
 
 export type Quality = 'high' | 'mid' | 'low'
-export type InputKind = 'down' | 'move' | 'up'
+export type InputKind = 'down' | 'move' | 'up' | 'cancel'
+export interface Tool { id: string; label: string; hint?: string }
 
 export interface Layer {
   readonly id: string
@@ -10,6 +11,10 @@ export interface Layer {
   readonly group: THREE.Group
   progress: number
   readonly settled: boolean
+  readonly tools: Tool[]
+  tool: string
+  notice: string
+  setTool(id: string): void
   input(p: THREE.Vector2, kind: InputKind): void
   update(dt: number): void
   setQuality(q: Quality): void

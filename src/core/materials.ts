@@ -9,9 +9,10 @@ uniform float uGrow,uBase,uMode,uTime,uSway,uMotion;
 attribute float aBorn;
 attribute float aSeed;
 attribute float aInk;
-varying vec2 vUv; varying vec3 vW; varying float vSeed,vGrowth,vInk;
+attribute float aTone;
+varying vec2 vUv; varying vec3 vW; varying float vSeed,vGrowth,vInk,vTone;
 void main(){
-  vUv=uv; vSeed=aSeed; vInk=aInk;
+  vUv=uv; vSeed=aSeed; vInk=aInk; vTone=aTone;
   vec3 p=position;
   float g=1.;
   if(uMode<.5) g=clamp(uGrow*1.4-aSeed*.4,0.,1.);
@@ -33,8 +34,8 @@ void main(){
 
 // uMode: 0 底边抽长  1 噪声晕染  2 沿 uv.x 铺开  3 实例按出生时间生长
 const FRAG = /* glsl */ `
-uniform vec3 uColor,uTint,uInkColor; uniform float uGrow,uMode,uShade,uTime,uFlow,uMotion,uEdge,uGradient,uOpacity,uHatch;
-varying vec2 vUv; varying vec3 vW; varying float vSeed,vGrowth,vInk;
+uniform vec3 uColor,uTint,uInkColor,uAccent; uniform float uGrow,uMode,uShade,uTime,uFlow,uMotion,uEdge,uGradient,uOpacity,uHatch;
+varying vec2 vUv; varying vec3 vW; varying float vSeed,vGrowth,vInk,vTone;
 float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
   return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
@@ -51,6 +52,7 @@ void main(){
   if(alpha<.002) discard;
   float pigment=wash*.55+n(vW.xy*5.)*.25+vSeed*.2;
   vec3 color=mix(uColor,uTint,clamp((vW.y+.5)/7.,0.,1.)*uGradient);
+  color=mix(color,uAccent*(.94+vSeed*.12),clamp(vTone,0.,1.));
   color*=1.+(pigment-.5)*.22*uShade;
   float hatch=1.-smoothstep(.08,.22,abs(fract(vW.x*8.+vW.y*11.+wash*.4)-.5));
   float dots=step(.96,h(floor(vW.xy*48.)));
@@ -62,13 +64,14 @@ void main(){
   #include <colorspace_fragment>
 }`
 
-export interface InkOpts { mode?: 0 | 1 | 2 | 3; base?: number; shade?: number; sway?: number; flow?: boolean; edge?: boolean; tint?: string; ink?: string; opacity?: number; hatch?: number }
+export interface InkOpts { mode?: 0 | 1 | 2 | 3; base?: number; shade?: number; sway?: number; flow?: boolean; edge?: boolean; tint?: string; ink?: string; opacity?: number; hatch?: number; accent?: string }
 
 export function inkMat(color: string, o: InkOpts = {}) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(color) }, uTint: { value: new THREE.Color(o.tint ?? color) },
       uInkColor: { value: new THREE.Color(o.ink ?? '#576c60') },
+      uAccent: { value: new THREE.Color(o.accent ?? color) },
       uOpacity: { value: o.opacity ?? 1 }, uHatch: { value: o.hatch ?? 0 },
       uGrow: { value: 0 }, uBase: { value: o.base ?? 0 }, uMode: { value: o.mode ?? 0 },
       uShade: { value: o.shade ?? 1 }, uSway: { value: o.sway ?? 0 },
@@ -80,19 +83,21 @@ export function inkMat(color: string, o: InkOpts = {}) {
 }
 
 /** 补齐 shader 需要的自定义属性，避免读到未绑定的垃圾值 */
-export function mk(geo: THREE.BufferGeometry, mat: THREE.Material) {
+export function inkGeometry(geo: THREE.BufferGeometry) {
   const n = geo.attributes.position.count
-  for (const a of ['aSeed', 'aBorn', 'aInk'])
+  for (const a of ['aSeed', 'aBorn', 'aInk', 'aTone'])
     if (!geo.attributes[a]) geo.setAttribute(a, new THREE.BufferAttribute(new Float32Array(n), 1))
-  return new THREE.Mesh(geo, mat)
+  return geo
 }
 
+export function mk<M extends THREE.Material>(geo: THREE.BufferGeometry, mat: M) { return new THREE.Mesh(inkGeometry(geo), mat) }
+
 /** 沿曲线的带状几何：uv.x = 沿长度 0..1，uv.y = 横向 */
-export function ribbon(c: THREE.Curve<THREE.Vector2>, w0: number, w1: number, seg = 64) {
+export function ribbon(c: THREE.Curve<THREE.Vector2>, w0: number, w1: number, seg = 64, widthAt?: (p: THREE.Vector2) => number) {
   const pos: number[] = [], uv: number[] = [], idx: number[] = []
   for (let i = 0; i <= seg; i++) {
     const t = i / seg, p = c.getPoint(t), tg = c.getTangent(t)
-    const w = (w0 + (w1 - w0) * t) / 2 * (1 + Math.sin(t * 37) * .025 + Math.sin(t * 71) * .012)
+    const w = (widthAt ? widthAt(p) : w0 + (w1 - w0) * t) / 2 * (1 + Math.sin(t * 37) * .025 + Math.sin(t * 71) * .012)
     pos.push(p.x - tg.y * w, p.y + tg.x * w, 0, p.x + tg.y * w, p.y - tg.x * w, 0)
     uv.push(t, 0, t, 1)
     if (i < seg) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2) }
@@ -127,8 +132,8 @@ export function pencil(points: THREE.Vector2[], width = .014, closed = false) {
 
 /** 合并同一笔的填色与线稿，并释放临时几何。 */
 export function combine(parts: THREE.BufferGeometry[]) {
-  for (const g of parts) if (!g.attributes.aInk)
-    g.setAttribute('aInk', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count), 1))
+  for (const g of parts) for (const name of ['aInk', 'aTone']) if (!g.attributes[name])
+    g.setAttribute(name, new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count), 1))
   const merged = mergeGeometries(parts)
   parts.forEach(g => g.dispose())
   if (!merged) throw new Error('Sketch geometry attributes do not match')
@@ -139,8 +144,8 @@ export function sketched(shape: THREE.Shape, width = .014, segments = 20) {
   return combine([new THREE.ShapeGeometry(shape, segments), pencil(shape.extractPoints(segments).shape, width, true)])
 }
 
-export function sketchedRibbon(c: THREE.Curve<THREE.Vector2>, w0: number, w1: number) {
-  const fill = ribbon(c, w0, w1)
+export function sketchedRibbon(c: THREE.Curve<THREE.Vector2>, w0: number, w1: number, widthAt?: (p: THREE.Vector2) => number, segments = 64) {
+  const fill = ribbon(c, w0, w1, segments, widthAt)
   const positions = fill.attributes.position
   const edges = [0, 1].map(side => Array.from({ length: positions.count / 2 }, (_, i) =>
     new THREE.Vector2(positions.getX(i * 2 + side), positions.getY(i * 2 + side))))

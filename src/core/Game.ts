@@ -2,14 +2,17 @@ import * as THREE from 'three'
 import { createLayers } from './layers'
 import { paperOverlay, uTime, uMotion } from './materials'
 import { track } from './analytics'
-import type { Layer, Quality, InputKind } from './types'
+import type { Layer, Quality, InputKind, Tool } from './types'
+import { Landscape } from './placement'
 
 export interface HudState {
   stage: number; total: number; progress: number; done: boolean
   quality: Quality; hint: string; names: string[]
+  tools: Tool[]; tool: string
 }
 
 const DPR: Record<Quality, number> = { high: 2, mid: 1.5, low: 1 }
+const EMPTY_TOOLS: Tool[] = []
 
 /** 2 秒窗口平均帧率，连续两次低于阈值就降一档 */
 export class PerfGuard {
@@ -37,26 +40,37 @@ export class StageMachine {
   private completed = false
   private settle = 0
   private t0 = 0
+  private drawing = false
 
   constructor(readonly layers: Layer[], scene: THREE.Scene) {
     layers.forEach(l => { l.group.visible = false; scene.add(l.group) })
   }
   get current(): Layer | undefined { return this.layers[this.index] }
+  get painting() { return this.drawing }
 
   input(p: THREE.Vector2, kind: InputKind) {
-    if (this.done || this.completed || this.current?.progress === 1) return
+    if (kind === 'up' || kind === 'cancel') { this.drawing = false; this.current?.input(p, kind); return }
+    if (this.completed && !this.done) return
     if (this.index < 0) {
       if (kind !== 'down') return
       this.enter(0)
     }
+    if (kind === 'down') this.drawing = true
     this.current?.input(p, kind)
+  }
+
+  select(i: number) {
+    if (!this.done || !Number.isInteger(i) || i < 0 || i >= this.layers.length) return false
+    this.index = i; this.completed = false; this.drawing = false
+    this.layers[i].notice = ''
+    return true
   }
 
   update(dt: number) {
     for (const l of this.layers) if (l.group.visible) l.update(dt)
     const c = this.current
     if (!c || this.done) return
-    if (!this.completed && c.settled) {
+    if (!this.completed && c.settled && !this.drawing) {
       this.completed = true
       this.settle = .55
       track('stage_complete', { id: c.id, ms: Math.round(performance.now() - this.t0) })
@@ -79,6 +93,7 @@ export class StageMachine {
 export class Game {
   private renderer: THREE.WebGLRenderer
   private scene = new THREE.Scene()
+  private landscape = new Landscape()
   private camera = new THREE.OrthographicCamera(-8, 8, 4.5, -4.5, 0.1, 50)
   private paper = paperOverlay()
   private machine: StageMachine
@@ -89,6 +104,8 @@ export class Game {
   private pointer: number | null = null
   private point = new THREE.Vector2()
   private hudElapsed = 0
+  private viewWidth = 0
+  private viewHeight = 0
   private motion = matchMedia('(prefers-reduced-motion: reduce)')
   private ro: ResizeObserver
   private ac = new AbortController()
@@ -106,7 +123,7 @@ export class Game {
     this.camera.position.z = 10
     this.scene.add(this.paper)
 
-    this.machine = new StageMachine(createLayers(), this.scene)
+    this.machine = new StageMachine(createLayers(this.landscape), this.scene)
     hud.names = this.machine.layers.map(l => l.label)
     hud.total = hud.names.length
 
@@ -134,7 +151,11 @@ export class Game {
         this.machine.input(this.point, 'move')
       }
     }, o)
-    const up = (e: PointerEvent) => { if (this.pointer === e.pointerId) this.endStroke() }
+    const up = (e: PointerEvent) => {
+      if (this.pointer !== e.pointerId) return
+      if (e.type === 'pointerup') this.point.copy(this.toWorld(e))
+      this.endStroke(e.type !== 'pointerup')
+    }
     canvas.addEventListener('pointerup', up, o)
     canvas.addEventListener('pointercancel', up, o)
     canvas.addEventListener('lostpointercapture', up, o)
@@ -146,7 +167,7 @@ export class Game {
     }, o)
     document.addEventListener('visibilitychange', () => {
       cancelAnimationFrame(this.raf)
-      this.endStroke()
+      this.endStroke(true)
       this.perf.reset()
       if (!document.hidden) this.start()
     }, o)
@@ -163,10 +184,12 @@ export class Game {
   }
 
   reset() {
-    this.endStroke()
+    this.endStroke(true)
     this.machine.layers.forEach(l => { this.scene.remove(l.group); l.dispose() })
-    this.machine = new StageMachine(createLayers(), this.scene)
+    this.landscape = new Landscape()
+    this.machine = new StageMachine(createLayers(this.landscape), this.scene)
     this.machine.layers.forEach(l => l.setQuality(this.quality))
+    this.resize()
     this.perf.reset()
     this.syncHud()
     track('reset')
@@ -185,9 +208,19 @@ export class Game {
     })
   }
 
+  selectStage(i: number) {
+    this.endStroke(true)
+    if (this.machine.select(i)) this.syncHud()
+  }
+
+  selectTool(id: string) {
+    this.endStroke(true)
+    this.machine.current?.setTool(id); this.syncHud()
+  }
+
   dispose() {
     cancelAnimationFrame(this.raf)
-    this.endStroke()
+    this.endStroke(true)
     this.ac.abort()
     this.ro.disconnect()
     this.machine.layers.forEach(l => l.dispose())
@@ -208,12 +241,15 @@ export class Game {
   private resize() {
     const w = this.canvas.clientWidth || innerWidth
     const h = this.canvas.clientHeight || innerHeight
+    if (w !== this.viewWidth || h !== this.viewHeight) this.endStroke(true)
+    this.viewWidth = w; this.viewHeight = h
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, DPR[this.quality]))
     this.renderer.setSize(w, h, false)
     const a = w / h
     const hw = Math.max(6.8, 4.5 * a), hh = hw / a
     const center = a < 1.4 ? -1.7 : -.2
     Object.assign(this.camera, { left: -hw, right: hw, top: hh + center, bottom: -hh + center })
+    this.landscape.viewport = { left: -hw, right: hw, top: hh + center, bottom: -hh + center }
     this.camera.updateProjectionMatrix()
   }
 
@@ -253,14 +289,16 @@ export class Game {
     h.stage = m.index
     h.progress = c ? Math.round(Math.min(1, c.progress) * 200) / 200 : 0
     h.done = m.done
-    h.hint = m.done ? '一方小天地，在你的笔下长成了' : c ? c.progress >= 1 ? '等最后一笔轻轻落下…' : c.hint : '点一下画纸，种下第一笔'
+    h.tools = c?.tools ?? EMPTY_TOOLS
+    h.tool = c?.tool ?? ''
+    h.hint = c?.notice || (c ? !m.done && c.progress >= 1 ? m.painting ? '松开画笔，等最后一笔落下…' : '等最后一笔轻轻落下…' : c.hint : '点一下画纸，种下第一笔')
   }
 
-  private endStroke() {
+  private endStroke(cancelled = false) {
     if (this.pointer === null) return
     const id = this.pointer
     this.pointer = null
-    this.machine.input(this.point, 'up')
+    this.machine.input(this.point, cancelled ? 'cancel' : 'up')
     if (this.canvas.hasPointerCapture(id)) this.canvas.releasePointerCapture(id)
   }
 }
