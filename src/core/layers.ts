@@ -222,7 +222,7 @@ class SkyLayer extends Reveal {
   private count = 0
   constructor(landscape: Landscape) {
     super('sky', '天空', '拖动晕染天空，点按或拖动添加云朵',
-      [{ id: 'cloud', label: '云朵' }, { id: 'sun', label: '日光', hint: '点按天空放下日光，拖动晕染天空' }], landscape)
+      [{ id: 'cloud', label: '云朵' }, { id: 'sun', label: '日光', hint: '天空只留一个太阳，拖动晕染天空' }], landscape)
     const mesh = mk(new THREE.PlaneGeometry(80, 60), this.wash)
     mesh.position.set(0, Y0 + 30, -5); this.group.add(mesh)
   }
@@ -230,7 +230,7 @@ class SkyLayer extends Reveal {
   protected onDown(p: THREE.Vector2) {
     super.onDown(p); this.remainder = 0; this.stamp(p)
     if (!this.firstSun && this.tool === 'cloud') {
-      this.sun(V2(p.x + 1.4, Math.min(this.landscape.viewport.top - 1.1, p.y + .8))); this.firstSun = true
+      this.sun(V2(p.x + 1.4, Math.min(this.landscape.viewport.top - 1.1, p.y + .8)))
     }
   }
   protected onDrag(p: THREE.Vector2, d: number, from: THREE.Vector2) {
@@ -240,13 +240,14 @@ class SkyLayer extends Reveal {
     this.remainder = (this.remainder + d) % 1.8
   }
   private stamp(p: THREE.Vector2) {
-    if (this.tool === 'sun') { this.sun(p); this.firstSun = true; return }
+    if (this.tool === 'sun') { this.sun(p); return }
     const m = inkMat('#f8f7ee', { mode: 1, shade: .2, ink: '#a4b3a3', opacity: .8 })
     const size = .65 + rnd() * .45
     const mesh = mk(sketched(blob(size, size * .22, ++this.count), .01), m)
     mesh.position.set(p.x, Math.max(Y0 + .5, p.y), -4.7); this.addObject(mesh, p); this.animate(m, .75)
   }
   private sun(p: THREE.Vector2) {
+    if (this.firstSun) { this.notice = '天空已有一个太阳，可以继续添加云朵或晕染天空'; return }
     const fill = sketched(blob(.58, .58, ++this.count), .014), rays: THREE.BufferGeometry[] = []
     for (let i = 0; i < 12; i++) {
       const a = i * Math.PI / 6
@@ -255,6 +256,7 @@ class SkyLayer extends Reveal {
     const m = inkMat('#e8cd78', { base: -.9, shade: .35, ink: '#9e905c', hatch: .35 })
     const mesh = mk(combine([fill, ...rays]), m)
     mesh.position.set(p.x, Math.max(Y0 + 1.1, p.y), -4.8); this.addObject(mesh, p); this.animate(m)
+    this.firstSun = true
   }
   protected apply(g: number) { setGrow(this.wash, g) }
 }

@@ -25,6 +25,48 @@ function tick(layers, seconds = 2) {
   for (let i = 0; i < Math.ceil(seconds / .05); i++) { uTime.value += .05; layers.forEach(l => l.update(.05)) }
 }
 
+// 自动日光和日光画笔共用单太阳限制；云朵可重复添加，取消/撤销可重新放下太阳。
+const skyWorld = make(), sky = skyWorld.layers[1]
+const suns = layer => meshes(layer).filter(m => m.visible && m.position.z === -4.8)
+const clouds = layer => meshes(layer).filter(m => m.visible && m.position.z === -4.7)
+draw(sky, point(-4, 2), point(4, 2), 20)
+assert.equal(suns(sky).length, 1); assert.ok(clouds(sky).length > 1)
+const firstSun = suns(sky)[0], cloudCount = clouds(sky).length
+sky.setTool('sun')
+for (const x of [-3, 0, 3]) draw(sky, point(x, 3), point(x + 1, 3), 10)
+assert.equal(suns(sky).length, 1); assert.equal(suns(sky)[0], firstSun)
+assert.match(sky.notice, /已有一个太阳/)
+sky.setTool('cloud'); draw(sky, point(-3, 4), point(3, 4), 20)
+assert.equal(suns(sky).length, 1); assert.ok(clouds(sky).length > cloudCount)
+assert.equal(skyWorld.landscape.undo(), true)
+assert.equal(suns(sky).length, 1); assert.equal(clouds(sky).length, cloudCount)
+assert.equal(skyWorld.landscape.undo(), true)
+assert.equal(suns(sky).length, 0); assert.equal(clouds(sky).length, 0)
+sky.setTool('sun'); draw(sky, point(0, 3), point(0, 3))
+assert.equal(suns(sky).length, 1)
+sky.setTool('cloud'); draw(sky, point(-3, 2), point(3, 2))
+assert.equal(suns(sky).length, 1); assert.ok(clouds(sky).length > 1)
+sky.setTool('sun'); sky.input(point(3, 3), 'down'); sky.input(point(3, 3), 'cancel')
+draw(sky, point(2, 3), point(2, 3)); assert.equal(suns(sky).length, 1)
+
+for (const tool of ['sun', 'cloud']) {
+  const cancelledSky = make().layers[1]; cancelledSky.setTool(tool)
+  cancelledSky.input(point(0, 3), 'down'); assert.equal(suns(cancelledSky).length, 1)
+  cancelledSky.input(point(0, 3), 'cancel'); assert.equal(suns(cancelledSky).length, 0)
+  draw(cancelledSky, point(0, 3), point(0, 3)); assert.equal(suns(cancelledSky).length, 1)
+}
+
+// 完成后回选天空和撤销历史释放都不会放开限制；新世界可重新创建太阳。
+const skyMachine = new StageMachine(skyWorld.layers, new THREE.Scene()); skyMachine.done = true
+assert.equal(skyMachine.select(1), true)
+for (let i = 0; i < 35; i++) {
+  sky.setTool('cloud'); draw(sky, point(-3, 2), point(-3, 2))
+}
+sky.setTool('sun'); skyMachine.input(point(3, 3), 'down'); skyMachine.input(point(3, 3), 'up')
+assert.equal(suns(sky).length, 1)
+const freshSky = make().layers[1]; freshSky.setTool('sun')
+draw(freshSky, point(0, 3), point(0, 3)); assert.equal(suns(freshSky).length, 1)
+
 // 同一段笔迹不因事件频率改变数量；跨批次添画保留原有矩阵和出生时间。
 for (const index of [0, 7]) {
   const a = make().layers[index], b = make().layers[index]
