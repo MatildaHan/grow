@@ -131,6 +131,12 @@ export class Landscape {
       cell.add(entity); this.plants.set(key, cell)
     }
     this.setActive(entity, true); this.retain(entity, () => this.setActive(entity, false))
+    // 替换景物时保留旧实体，取消/撤销恢复它；历史释放后沿用原来的销毁路径。
+    return () => {
+      if (!entity.active) return
+      this.retain(entity, () => this.setActive(entity, true))
+      this.setActive(entity, false)
+    }
   }
   addSurface(kind: GroundKind, polygon: Vector2[]) {
     const surface: Surface = { kind, polygon, bounds: boundsOf(polygon), active: true }

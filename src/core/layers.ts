@@ -3,6 +3,7 @@ import { type Layer, type Quality, type InputKind, type Tool, Y0, clamp01, easeO
 import { inkMat, inkGeometry, mk, sketched, sketchedRibbon, ribbon, pencil, combine, uTime, uMotion, type InkOpts } from './materials'
 import { grassGeometry, wheatGeometry, leaf } from './brushes'
 import { Landscape, boundsOf, oval, type Surface, type Footprint } from './placement'
+import { meadowShape, cloudParts, cloudShape, cloudsTouch, type CloudPart } from './scenery'
 
 const QF: Record<Quality, number> = { high: 1, mid: .6, low: .35 }
 const V2 = (x: number, y: number) => new THREE.Vector2(x, y)
@@ -59,7 +60,7 @@ abstract class Base implements Layer {
   protected rollback() { const progress = this.progress; return () => { this.progress = progress } }
   protected addObject(object: THREE.Object3D, root: THREE.Vector2, kind: 'decoration' | 'tree' | 'house' = 'decoration', footprint?: Footprint, extra?: (visible: boolean) => void) {
     this.group.add(object)
-    this.landscape.register(kind, root, visible => { object.visible = visible; extra?.(visible) }, () => {
+    return this.landscape.register(kind, root, visible => { object.visible = visible; extra?.(visible) }, () => {
       const materials = new Set<THREE.Material>()
       object.traverse(o => { if (o instanceof THREE.Mesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) materials.add(m) })
       this.growing = this.growing.filter(a => !materials.has(a.m))
@@ -205,8 +206,8 @@ class GrassLayer extends Painter {
     super('grass', '草地', '按住拖动，在笔迹经过的地方种草',
       [{ id: 'mixed', label: '混合' }, { id: 'fine', label: '细草' }, { id: 'broad', label: '阔叶' }, { id: 'fern', label: '蕨草' }, { id: 'flower', label: '野花' }],
       bank, { density: 21, spread: .4, z: -3, size: .7, distance: 40 }, landscape)
-    const mesh = mk(new THREE.PlaneGeometry(80, 60), this.ground)
-    mesh.position.set(0, Y0 - 30, -3.2); this.group.add(mesh)
+    const mesh = mk(new THREE.ShapeGeometry(meadowShape()), this.ground)
+    mesh.position.z = -3.2; this.group.add(mesh)
   }
   update(dt: number) {
     super.update(dt)
@@ -241,10 +242,24 @@ class SkyLayer extends Reveal {
   }
   private stamp(p: THREE.Vector2) {
     if (this.tool === 'sun') { this.sun(p); return }
-    const m = inkMat('#f8f7ee', { mode: 1, shade: .2, ink: '#a4b3a3', opacity: .8 })
-    const size = .65 + rnd() * .45
-    const mesh = mk(sketched(blob(size, size * .22, ++this.count), .01), m)
-    mesh.position.set(p.x, Math.max(Y0 + .5, p.y), -4.7); this.addObject(mesh, p); this.animate(m, .75)
+    const parts = cloudParts(V2(p.x, Math.max(Y0 + .7, p.y)), ++this.count)
+    const nearby: THREE.Mesh[] = []
+    const candidates = this.group.children.filter((o): o is THREE.Mesh => o instanceof THREE.Mesh && o.visible && !!o.userData.cloudParts)
+    // 合并可以跨越多个旧云团，只在落笔时重建；旧云由编辑历史保留。
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const cloud of candidates) if (!nearby.includes(cloud) && cloudsTouch(parts, cloud.userData.cloudParts as CloudPart[])) {
+        nearby.push(cloud); parts.push(...cloud.userData.cloudParts as CloudPart[]); changed = true
+      }
+    }
+    const m = inkMat('#f8f7ee', { mode: 1, shade: .2, ink: '#a4b3a3', opacity: 1 })
+    const mesh = mk(sketched(cloudShape(parts), .01), m)
+    mesh.position.z = -4.7; mesh.userData.cloudParts = parts
+    for (const cloud of nearby) (cloud.userData.hideCloud as () => void)()
+    mesh.userData.hideCloud = this.addObject(mesh, p)
+    // 已有云不随合并重新淡出，新轮廓直接接续；独立新云仍轻轻显现。
+    if (nearby.length) setGrow(m, 1); else this.animate(m, .75)
   }
   private sun(p: THREE.Vector2) {
     if (this.firstSun) { this.notice = '天空已有一个太阳，可以继续添加云朵或晕染天空'; return }
@@ -255,6 +270,7 @@ class SkyLayer extends Reveal {
     }
     const m = inkMat('#e8cd78', { base: -.9, shade: .35, ink: '#9e905c', hatch: .35 })
     const mesh = mk(combine([fill, ...rays]), m)
+    mesh.renderOrder = 100; m.depthTest = false
     mesh.position.set(p.x, Math.max(Y0 + 1.1, p.y), -4.8); this.addObject(mesh, p); this.animate(m)
     this.firstSun = true
   }

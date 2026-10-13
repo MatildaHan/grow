@@ -1,3 +1,4 @@
+import { meadowShape, cloudParts, cloudShape } from '../src/core/scenery.ts'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { createLayers } from '../src/core/layers.ts'
@@ -29,23 +30,24 @@ function tick(layers, seconds = 2) {
 const skyWorld = make(), sky = skyWorld.layers[1]
 const suns = layer => meshes(layer).filter(m => m.visible && m.position.z === -4.8)
 const clouds = layer => meshes(layer).filter(m => m.visible && m.position.z === -4.7)
+const cloudSize = layer => clouds(layer).reduce((n, m) => n + m.userData.cloudParts.length, 0)
 draw(sky, point(-4, 2), point(4, 2), 20)
-assert.equal(suns(sky).length, 1); assert.ok(clouds(sky).length > 1)
-const firstSun = suns(sky)[0], cloudCount = clouds(sky).length
+assert.equal(suns(sky).length, 1); assert.ok(cloudSize(sky) > 6)
+const firstSun = suns(sky)[0], cloudCount = cloudSize(sky)
 sky.setTool('sun')
 for (const x of [-3, 0, 3]) draw(sky, point(x, 3), point(x + 1, 3), 10)
 assert.equal(suns(sky).length, 1); assert.equal(suns(sky)[0], firstSun)
 assert.match(sky.notice, /已有一个太阳/)
 sky.setTool('cloud'); draw(sky, point(-3, 4), point(3, 4), 20)
-assert.equal(suns(sky).length, 1); assert.ok(clouds(sky).length > cloudCount)
+assert.equal(suns(sky).length, 1); assert.ok(cloudSize(sky) > cloudCount)
 assert.equal(skyWorld.landscape.undo(), true)
-assert.equal(suns(sky).length, 1); assert.equal(clouds(sky).length, cloudCount)
+assert.equal(suns(sky).length, 1); assert.equal(cloudSize(sky), cloudCount)
 assert.equal(skyWorld.landscape.undo(), true)
 assert.equal(suns(sky).length, 0); assert.equal(clouds(sky).length, 0)
 sky.setTool('sun'); draw(sky, point(0, 3), point(0, 3))
 assert.equal(suns(sky).length, 1)
 sky.setTool('cloud'); draw(sky, point(-3, 2), point(3, 2))
-assert.equal(suns(sky).length, 1); assert.ok(clouds(sky).length > 1)
+assert.equal(suns(sky).length, 1); assert.ok(cloudSize(sky) > 6)
 sky.setTool('sun'); sky.input(point(3, 3), 'down'); sky.input(point(3, 3), 'cancel')
 draw(sky, point(2, 3), point(2, 3)); assert.equal(suns(sky).length, 1)
 
@@ -66,6 +68,40 @@ sky.setTool('sun'); skyMachine.input(point(3, 3), 'down'); skyMachine.input(poin
 assert.equal(suns(sky).length, 1)
 const freshSky = make().layers[1]; freshSky.setTool('sun')
 draw(freshSky, point(0, 3), point(0, 3)); assert.equal(suns(freshSky).length, 1)
+
+// 草地远缘起伏平缓且覆盖宽视野；云形和大小有明显差异。
+const meadow = meadowShape().getPoints().filter(p => p.y > -2)
+assert.ok(Math.max(...meadow.map(p => p.y)) - Math.min(...meadow.map(p => p.y)) > .6)
+assert.ok(meadow.some(p => p.x === -40) && meadow.some(p => p.x === 40))
+const shapes = seeded(() => Array.from({ length: 18 }, (_, i) => cloudShape(cloudParts(point(0, 3), i)).getPoints()))
+const widths = shapes.map(points => Math.max(...points.map(p => p.x)) - Math.min(...points.map(p => p.x)))
+const ratios = shapes.map((points, i) => widths[i] / (Math.max(...points.map(p => p.y)) - Math.min(...points.map(p => p.y))))
+assert.ok(Math.max(...widths) / Math.min(...widths) > 2)
+assert.ok(Math.max(...ratios) / Math.min(...ratios) > 2)
+
+// 相邻云只保留一条外轮廓；远云独立，取消/撤销恢复合并前对象并释放新几何。
+const cloudWorld = make(), mergingSky = cloudWorld.layers[1]
+seeded(() => draw(mergingSky, point(-4, 3), point(-4, 3)))
+const originalCloud = clouds(mergingSky)[0], originalShape = Array.from(originalCloud.geometry.attributes.position.array)
+seeded(() => draw(mergingSky, point(-3.7, 3.1), point(-3.7, 3.1)))
+assert.equal(clouds(mergingSky).length, 1); assert.equal(originalCloud.visible, false)
+const mergedCloud = clouds(mergingSky)[0]; let mergedDisposed = 0
+mergedCloud.geometry.addEventListener('dispose', () => mergedDisposed++)
+assert.equal(cloudWorld.landscape.undo(), true); assert.equal(mergedDisposed, 1)
+assert.equal(clouds(mergingSky)[0], originalCloud)
+assert.deepEqual(Array.from(originalCloud.geometry.attributes.position.array), originalShape)
+mergingSky.input(point(-3.7, 3.1), 'down'); mergingSky.input(point(-3.7, 3.1), 'cancel')
+assert.equal(clouds(mergingSky)[0], originalCloud); assert.equal(clouds(mergingSky).length, 1)
+draw(mergingSky, point(6, 3), point(6, 3)); assert.equal(clouds(mergingSky).length, 2)
+const sunMesh = suns(mergingSky)[0]
+assert.equal(sunMesh.material.depthTest, false)
+draw(cloudWorld.layers[2], point(-2.6, 4), point(-2.6, 4))
+assert.ok(sunMesh.renderOrder > Math.max(...cloudWorld.layers[2].group.children.map(m => m.renderOrder)))
+let oldCloudDisposed = 0
+originalCloud.geometry.addEventListener('dispose', () => oldCloudDisposed++)
+draw(mergingSky, point(-3.7, 3.1), point(-3.7, 3.1))
+for (let i = 0; i < 35; i++) draw(mergingSky, point(6, 3), point(6, 3))
+assert.equal(oldCloudDisposed, 1); assert.ok(!mergingSky.group.children.includes(originalCloud))
 
 // 同一段笔迹不因事件频率改变数量；跨批次添画保留原有矩阵和出生时间。
 for (const index of [0, 7]) {
